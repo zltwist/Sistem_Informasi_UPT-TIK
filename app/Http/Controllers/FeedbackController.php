@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Answer;
+use App\Models\ChatSession;
 use App\Models\Feedback;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -48,6 +49,33 @@ class FeedbackController extends Controller
                 $answer->positive_feedback / $answer->total_feedback;
 
             $answer->save();
+
+            // ===== RULE ESKALASI BERBASIS FEEDBACK =====
+            $chatSession = $answer->question->chatSession;
+
+            // Rule 1: confidence rendah + cukup bukti
+            if (
+                $answer->confidence_score < 0.4 &&
+                $answer->total_feedback >= 5
+            ) {
+                $chatSession->status = 'escalated';
+                $chatSession->save();
+                return;
+            }
+
+            // Rule 2: feedback negatif berturut-turut (3 terakhir)
+            $lastFeedbacks = Feedback::where('answer_id', $answer->id)
+                ->latest()
+                ->take(3)
+                ->pluck('is_helpful');
+
+            if (
+                $lastFeedbacks->count() === 3 &&
+                $lastFeedbacks->every(fn ($v) => $v === false)
+            ) {
+                $chatSession->status = 'escalated';
+                $chatSession->save();
+            }
 
             // 6. Learning rule: AI → Knowledge Base
             $CONFIDENCE_THRESHOLD = 0.7;

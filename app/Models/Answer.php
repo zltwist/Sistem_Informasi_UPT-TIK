@@ -23,4 +23,9 @@ class Answer extends Model
     {
         return $this->hasMany(Feedback::class);
     }
+
+    public function question()
+    {
+        return $this->belongsTo(Question::class);
+    }
 }

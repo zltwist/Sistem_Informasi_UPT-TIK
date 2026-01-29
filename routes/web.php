@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AskController;
+use App\Http\Controllers\AnswerVerificationController;
 use App\Http\Controllers\ChatSessionController;
 use App\Http\Controllers\FeedbackController;
 
@@ -23,3 +24,4 @@ Route::get('/test-ask', function () {
 Route::post('/ask', [AskController::class, 'ask']);
 Route::post('/feedback', [FeedbackController::class, 'store']);
 Route::post('/session/{id}/close', [ChatSessionController::class, 'close']);
+Route::post('/answers/{id}/verify', [AnswerVerificationController::class, 'verify']);

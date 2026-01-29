@@ -61,10 +61,62 @@ class AskController extends Controller
         ]);
 
         /**
-         * 4. Cek knowledge base (database-first, confidence-aware)
+         * 4. Decision Engine:
+         * - Verified staff (prioritas tertinggi)
+         * - High confidence (knowledge base)
          */
+        $keywords = $this->extractKeywords($request->question);
+
+        $verifiedAnswer = Answer::where('is_verified', true)
+            ->when(!empty($keywords), function ($query) use ($keywords) {
+                $query->where(function ($q) use ($keywords) {
+                    foreach ($keywords as $word) {
+                        $q->orWhere('content', 'LIKE', '%' . $word . '%');
+                    }
+                });
+                $scoreParts = [];
+                $bindings = [];
+                foreach ($keywords as $word) {
+                    $scoreParts[] = '(CASE WHEN content LIKE ? THEN 1 ELSE 0 END)';
+                    $bindings[] = '%' . $word . '%';
+                }
+                $scoreSql = implode(' + ', $scoreParts);
+                $query->orderByRaw($scoreSql . ' DESC', $bindings);
+            }, function ($query) use ($request) {
+                $query->where('content', 'LIKE', '%' . $request->question . '%');
+            })
+            ->orderByDesc('verified_at')
+            ->first();
+
+        if ($verifiedAnswer) {
+            return response()->json([
+                'answer'     => $verifiedAnswer->content,
+                'source'     => 'verified',
+                'confidence' => $verifiedAnswer->confidence_score,
+                'session_id' => $chatSession->id,
+            ]);
+        }
+
+        $CONFIDENCE_THRESHOLD = 0.7;
         $existingAnswer = Answer::where('source', 'db')
-            ->where('content', 'LIKE', '%' . $request->question . '%')
+            ->where('confidence_score', '>=', $CONFIDENCE_THRESHOLD)
+            ->when(!empty($keywords), function ($query) use ($keywords) {
+                $query->where(function ($q) use ($keywords) {
+                    foreach ($keywords as $word) {
+                        $q->orWhere('content', 'LIKE', '%' . $word . '%');
+                    }
+                });
+                $scoreParts = [];
+                $bindings = [];
+                foreach ($keywords as $word) {
+                    $scoreParts[] = '(CASE WHEN content LIKE ? THEN 1 ELSE 0 END)';
+                    $bindings[] = '%' . $word . '%';
+                }
+                $scoreSql = implode(' + ', $scoreParts);
+                $query->orderByRaw($scoreSql . ' DESC', $bindings);
+            }, function ($query) use ($request) {
+                $query->where('content', 'LIKE', '%' . $request->question . '%');
+            })
             ->orderByDesc('confidence_score')
             ->first();
 
@@ -73,7 +125,7 @@ class AskController extends Controller
                 'answer'     => $existingAnswer->content,
                 'source'     => 'database',
                 'confidence' => $existingAnswer->confidence_score,
-                'session_id' => $chatSession->id
+                'session_id' => $chatSession->id,
             ]);
         }
 
@@ -151,5 +203,31 @@ class AskController extends Controller
                 'session_id' => $chatSession->id
             ], 500);
         }
+    }
+
+    private function extractKeywords(string $text): array
+    {
+        $stopwords = config('keywords.stopwords', []);
+        $maxKeywords = (int) config('keywords.max_keywords', 6);
+
+        $clean = strtolower($text);
+        $clean = preg_replace('/[^a-z0-9\\s]/', ' ', $clean);
+        $parts = preg_split('/\\s+/', trim($clean));
+
+        $keywords = [];
+        foreach ($parts as $word) {
+            if (strlen($word) < 3) {
+                continue;
+            }
+            if (in_array($word, $stopwords, true)) {
+                continue;
+            }
+            $keywords[] = $word;
+            if (count($keywords) >= $maxKeywords) {
+                break;
+            }
+        }
+
+        return array_values(array_unique($keywords));
     }
 }

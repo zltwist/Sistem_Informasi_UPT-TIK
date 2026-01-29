@@ -50,6 +50,11 @@ class FeedbackController extends Controller
 
             $answer->save();
 
+            // Jawaban terverifikasi tidak dipengaruhi eskalasi berbasis feedback.
+            if ($answer->is_verified) {
+                return;
+            }
+
             // ===== RULE ESKALASI BERBASIS FEEDBACK =====
             $chatSession = $answer->question->chatSession;
 
@@ -77,32 +82,8 @@ class FeedbackController extends Controller
                 $chatSession->save();
             }
 
-            // 6. Learning rule: AI → Knowledge Base
-            $CONFIDENCE_THRESHOLD = 0.7;
-            $MIN_FEEDBACK = 5;
-
-            if (
-                $answer->source === 'ai' &&
-                $answer->total_feedback >= $MIN_FEEDBACK &&
-                $answer->confidence_score >= $CONFIDENCE_THRESHOLD
-            ) {
-                // Cegah duplikasi knowledge base
-                $alreadyExists = Answer::where('source', 'db')
-                    ->where('content', $answer->content)
-                    ->exists();
-
-                if (!$alreadyExists) {
-                    Answer::create([
-                        'question_id'        => $answer->question_id,
-                        'content'            => $answer->content,
-                        'source'             => 'db',
-                        'confidence_score'   => $answer->confidence_score,
-                        'total_feedback'     => 0,
-                        'positive_feedback'  => 0,
-                        'negative_feedback'  => 0,
-                    ]);
-                }
-            }
+            // 6. Learning rule ditahan sampai ada verifikasi staff.
+            // Feedback tetap dikumpulkan sebagai sinyal kualitas.
         });
 
         return response()->json([

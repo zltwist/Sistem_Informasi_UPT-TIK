@@ -17,6 +17,14 @@ class Answer extends Model
         'positive_feedback',
         'negative_feedback',
         'confidence_score',
+        'is_verified',
+        'verified_by',
+        'verified_at',
+    ];
+
+    protected $casts = [
+        'is_verified' => 'boolean',
+        'verified_at' => 'datetime',
     ];
 
     public function feedbacks()
@@ -27,5 +35,10 @@ class Answer extends Model
     public function question()
     {
         return $this->belongsTo(Question::class);
+    }
+
+    public function verifiedBy()
+    {
+        return $this->belongsTo(User::class, 'verified_by');
     }
 }
